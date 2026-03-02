@@ -1,0 +1,10 @@
+<IfModule mod_rewrite.c>
+    RewriteEngine on
+
+    # No reescribir archivos reales ni directorios reales
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+
+    # Todas las solicitudes van a index.php
+    RewriteRule ^(.*)$ index.php [L]
+</IfModule>
