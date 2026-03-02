@@ -182,7 +182,7 @@ class AgenteController extends Controller
                         'id' => $agente->sala->id,
                         'nombre' => $agente->sala->nombre,
                     ] : null,
-                    'estado' => $agente->estado,
+                    'estado' => $agente->isConectado() ? 'conectado' : 'desconectado',
                     'ultimo_heartbeat' => $agente->ultimo_heartbeat,
                     'info_sistema' => $agente->info_sistema,
                 ];

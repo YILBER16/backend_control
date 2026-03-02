@@ -24,6 +24,20 @@ class Agente extends Model
     ];
 
     /**
+     * Determinar si el agente está conectado
+     * (conectado si recibió heartbeat en los últimos 15 segundos)
+     */
+    public function isConectado(): bool
+    {
+        if (!$this->ultimo_heartbeat) {
+            return false;
+        }
+        
+        $tiempoTranscurrido = now()->diffInSeconds($this->ultimo_heartbeat);
+        return $tiempoTranscurrido <= 15; // 15 segundos de tolerancia
+    }
+
+    /**
      * Relación: Un agente pertenece a una sala
      */
     public function sala(): BelongsTo
