@@ -33,7 +33,7 @@ class Agente extends Model
             return false;
         }
         
-        $tiempoTranscurrido = now()->diffInSeconds($this->ultimo_heartbeat);
+        $tiempoTranscurrido = now()->getTimestamp() - $this->ultimo_heartbeat->getTimestamp();
         return $tiempoTranscurrido <= 15; // 15 segundos de tolerancia
     }
 
