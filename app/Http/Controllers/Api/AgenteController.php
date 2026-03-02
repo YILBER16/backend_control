@@ -4,8 +4,11 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Agente;
+use App\Models\Sala;
 use App\Models\Comando;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
 
 class AgenteController extends Controller
@@ -13,60 +16,78 @@ class AgenteController extends Controller
     /**
      * POST /api/esclavo/register
      * Registra un nuevo agente en el sistema
+     * Requiere: nombre_pc, sala_id
      */
-    public function register(Request $request)
+    public function register(Request $request): JsonResponse
     {
         $validated = $request->validate([
             'nombre_pc' => 'required|string|max:255',
-            'sala' => 'required|string|max:255',
+            'sala_id' => 'required|integer|exists:salas,id',
+            'info_sistema' => 'nullable|array',
         ]);
 
         try {
             $agente = Agente::updateOrCreate(
                 ['nombre_pc' => $validated['nombre_pc']],
                 [
-                    'sala' => $validated['sala'],
+                    'sala_id' => $validated['sala_id'],
                     'estado' => 'conectado',
                     'ultimo_heartbeat' => now(),
                     'fecha_registro' => now(),
-                    'info_sistema' => json_encode($request->all())
+                    'info_sistema' => $validated['info_sistema'] ?? null
                 ]
             );
 
+            $sala = Sala::find($validated['sala_id']);
+
             return response()->json([
-                'status' => 'success',
+                'success' => true,
                 'message' => 'Agente registrado exitosamente',
                 'agente_id' => $agente->id,
+                'nombre_pc' => $agente->nombre_pc,
+                'sala' => [
+                    'id' => $sala->id,
+                    'nombre' => $sala->nombre,
+                ],
                 'timestamp' => now()->toIso8601String()
-            ], 201);
+            ], Response::HTTP_CREATED);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validación fallida',
+                'errors' => $e->errors()
+            ], Response::HTTP_UNPROCESSABLE_ENTITY);
         } catch (\Exception $e) {
             return response()->json([
-                'status' => 'error',
-                'message' => $e->getMessage()
-            ], 500);
+                'success' => false,
+                'message' => 'Error registrando agente: ' . $e->getMessage()
+            ], Response::HTTP_INTERNAL_SERVER_ERROR);
         }
     }
 
     /**
      * POST /api/esclavo/heartbeat
      * Agente reporta su estado y recibe comandos pendientes
+     * Requiere: nombre_pc, sala_id
      */
-    public function heartbeat(Request $request)
+    public function heartbeat(Request $request): JsonResponse
     {
         $validated = $request->validate([
             'nombre_pc' => 'required|string|max:255',
-            'sala' => 'required|string|max:255',
+            'sala_id' => 'required|integer|exists:salas,id',
         ]);
 
         try {
-            // Actualizar último heartbeat del agente
-            $agente = Agente::where('nombre_pc', $validated['nombre_pc'])->first();
+            // Buscar agente
+            $agente = Agente::where('nombre_pc', $validated['nombre_pc'])
+                ->where('sala_id', $validated['sala_id'])
+                ->first();
 
             if (!$agente) {
                 // Si no existe, registrarlo
                 $agente = Agente::create([
                     'nombre_pc' => $validated['nombre_pc'],
-                    'sala' => $validated['sala'],
+                    'sala_id' => $validated['sala_id'],
                     'estado' => 'conectado',
                     'ultimo_heartbeat' => now(),
                     'fecha_registro' => now()
@@ -80,7 +101,7 @@ class AgenteController extends Controller
             }
 
             // Obtener comandos pendientes para este agente (máximo 5)
-            $comandos = Comando::where('nombre_pc', $validated['nombre_pc'])
+            $comandos = Comando::where('agente_id', $agente->id)
                 ->where('estado', 'pendiente')
                 ->limit(5)
                 ->get()
@@ -88,21 +109,22 @@ class AgenteController extends Controller
                     return [
                         'id' => $cmd->id,
                         'tipo' => $cmd->tipo,
-                        'parametros' => $cmd->parametros ? json_decode($cmd->parametros) : null
+                        'parametros' => $cmd->parametros
                     ];
                 });
 
             return response()->json([
-                'status' => 'ok',
-                'timestamp' => now()->toIso8601String(),
+                'success' => true,
+                'agente_id' => $agente->id,
+                'nombre_pc' => $agente->nombre_pc,
                 'comandos' => $comandos,
-                'count' => count($comandos)
-            ], 200);
+                'timestamp' => now()->toIso8601String()
+            ], Response::HTTP_OK);
         } catch (\Exception $e) {
             return response()->json([
-                'status' => 'error',
-                'message' => $e->getMessage()
-            ], 500);
+                'success' => false,
+                'message' => 'Error en heartbeat: ' . $e->getMessage()
+            ], Response::HTTP_INTERNAL_SERVER_ERROR);
         }
     }
 
@@ -110,41 +132,34 @@ class AgenteController extends Controller
      * POST /api/esclavo/resultado
      * Agente reporta el resultado de un comando ejecutado
      */
-    public function resultado(Request $request)
+    public function resultado(Request $request): JsonResponse
     {
         $validated = $request->validate([
             'nombre_pc' => 'required|string|max:255',
             'comando_id' => 'required|integer',
-            'estado' => 'required|in:ejecutado,error',
             'resultado' => 'nullable|string',
         ]);
 
         try {
-            $comando = Comando::find($validated['comando_id']);
-
-            if (!$comando) {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'Comando no encontrado'
-                ], 404);
-            }
+            $comando = Comando::findOrFail($validated['comando_id']);
 
             $comando->update([
-                'estado' => $validated['estado'],
+                'estado' => 'ejecutado',
                 'resultado' => $validated['resultado'] ?? null,
                 'fecha_ejecucion' => now()
             ]);
 
             return response()->json([
-                'status' => 'success',
+                'success' => true,
                 'message' => 'Resultado registrado',
+                'comando_id' => $comando->id,
                 'timestamp' => now()->toIso8601String()
-            ], 200);
+            ], Response::HTTP_OK);
         } catch (\Exception $e) {
             return response()->json([
-                'status' => 'error',
-                'message' => $e->getMessage()
-            ], 500);
+                'success' => false,
+                'message' => 'Error: ' . $e->getMessage()
+            ], Response::HTTP_INTERNAL_SERVER_ERROR);
         }
     }
 
@@ -152,32 +167,72 @@ class AgenteController extends Controller
      * GET /api/agentes
      * Obtiene lista de todos los agentes conectados
      */
-    public function listar()
+    public function listar(): JsonResponse
     {
         try {
-            $agentes = Agente::all()
-                ->map(function ($agente) {
+            $agentes = Agente::with('sala')->get();
+
+            $agentes_data = $agentes->map(function ($agente) {
+                return [
+                    'id' => $agente->id,
+                    'nombre_pc' => $agente->nombre_pc,
+                    'sala' => $agente->sala ? [
+                        'id' => $agente->sala->id,
+                        'nombre' => $agente->sala->nombre,
+                    ] : null,
+                    'estado' => $agente->estado,
+                    'ultimo_heartbeat' => $agente->ultimo_heartbeat,
+                    'info_sistema' => $agente->info_sistema,
+                ];
+            });
+
+            return response()->json([
+                'success' => true,
+                'agentes' => $agentes_data,
+                'total' => $agentes->count(),
+                'timestamp' => now()->toIso8601String()
+            ], Response::HTTP_OK);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Error: ' . $e->getMessage()
+            ], Response::HTTP_INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    /**
+     * GET /api/agentes/{sala_id}
+     * Obtiene agentes de una sala específica
+     */
+    public function agentesPorSala($sala_id): JsonResponse
+    {
+        try {
+            $sala = Sala::findOrFail($sala_id);
+            
+            $agentes = $sala->agentes;
+
+            return response()->json([
+                'success' => true,
+                'sala' => [
+                    'id' => $sala->id,
+                    'nombre' => $sala->nombre,
+                ],
+                'agentes' => $agentes->map(function ($agente) {
                     return [
                         'id' => $agente->id,
                         'nombre_pc' => $agente->nombre_pc,
-                        'sala' => $agente->sala,
                         'estado' => $agente->estado,
-                        'ultimo_heartbeat' => $agente->ultimo_heartbeat?->diffForHumans(),
-                        'fecha_registro' => $agente->fecha_registro?->toIso8601String()
+                        'ultimo_heartbeat' => $agente->ultimo_heartbeat,
                     ];
-                });
-
-            return response()->json([
-                'status' => 'ok',
-                'agentes' => $agentes,
-                'total' => count($agentes),
+                })->toArray(),
+                'total' => $agentes->count(),
                 'timestamp' => now()->toIso8601String()
-            ], 200);
+            ], Response::HTTP_OK);
         } catch (\Exception $e) {
             return response()->json([
-                'status' => 'error',
-                'message' => $e->getMessage()
-            ], 500);
+                'success' => false,
+                'message' => 'Error: ' . $e->getMessage()
+            ], Response::HTTP_INTERNAL_SERVER_ERROR);
         }
     }
 
@@ -185,14 +240,20 @@ class AgenteController extends Controller
      * GET /api/health
      * Verifica que el API está operativo
      */
-    public function health()
+    public function health(): JsonResponse
     {
+        $agentes_conectados = Agente::where('estado', 'conectado')->count();
+        $total_agentes = Agente::count();
+        $total_salas = Sala::count();
+
         return response()->json([
+            'success' => true,
             'status' => 'OK',
             'message' => 'API operativa',
-            'agentes_conectados' => Agente::where('estado', 'conectado')->count(),
+            'agentes_conectados' => $agentes_conectados,
+            'total_agentes' => $total_agentes,
+            'total_salas' => $total_salas,
             'timestamp' => now()->toIso8601String()
-        ], 200);
+        ], Response::HTTP_OK);
     }
 }
-

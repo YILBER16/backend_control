@@ -14,13 +14,17 @@ return new class extends Migration
         Schema::create('agentes', function (Blueprint $table) {
             $table->id();
             $table->string('nombre_pc')->unique();
-            $table->string('sala');
+            $table->unsignedBigInteger('sala_id');
+            $table->foreign('sala_id')
+                  ->references('id')
+                  ->on('salas')
+                  ->onDelete('cascade');
             $table->string('estado')->default('desconectado'); // conectado, desconectado, offline
             $table->timestamp('ultimo_heartbeat')->nullable();
             $table->timestamp('fecha_registro')->nullable();
             $table->text('info_sistema')->nullable(); // JSON con info del agente
             $table->timestamps();
-            $table->index('sala');
+            $table->index('sala_id');
             $table->index('estado');
         });
     }
