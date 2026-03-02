@@ -104,22 +104,31 @@ class AgenteController extends Controller
             $comandos = Comando::where('agente_id', $agente->id)
                 ->where('estado', 'pendiente')
                 ->limit(5)
-                ->get()
-                ->map(function ($cmd) {
-                    return [
-                        'id' => $cmd->id,
-                        'comando' => $cmd->tipo,  // Cambiar 'tipo' a 'comando'
-                        'tipo' => $cmd->tipo,     // Mantener por compatibilidad
-                        'sala_id' => $cmd->sala_id,
-                        'parametros' => $cmd->parametros
-                    ];
-                });
+                ->get();
+
+            // Cambiar estado a 'enviado' después de obtener (se envían solo una vez)
+            if ($comandos->count() > 0) {
+                Comando::where('agente_id', $agente->id)
+                    ->where('estado', 'pendiente')
+                    ->limit(5)
+                    ->update(['estado' => 'enviado']);
+            }
+
+            $comandosFormato = $comandos->map(function ($cmd) {
+                return [
+                    'id' => $cmd->id,
+                    'comando' => $cmd->tipo,  // Cambiar 'tipo' a 'comando'
+                    'tipo' => $cmd->tipo,     // Mantener por compatibilidad
+                    'sala_id' => $cmd->sala_id,
+                    'parametros' => $cmd->parametros
+                ];
+            });
 
             return response()->json([
                 'success' => true,
                 'agente_id' => $agente->id,
                 'nombre_pc' => $agente->nombre_pc,
-                'comandos' => $comandos,
+                'comandos' => $comandosFormato,
                 'timestamp' => now()->toIso8601String()
             ], Response::HTTP_OK);
         } catch (\Exception $e) {
