@@ -108,7 +108,9 @@ class AgenteController extends Controller
                 ->map(function ($cmd) {
                     return [
                         'id' => $cmd->id,
-                        'tipo' => $cmd->tipo,
+                        'comando' => $cmd->tipo,  // Cambiar 'tipo' a 'comando'
+                        'tipo' => $cmd->tipo,     // Mantener por compatibilidad
+                        'sala_id' => $cmd->sala_id,
                         'parametros' => $cmd->parametros
                     ];
                 });
