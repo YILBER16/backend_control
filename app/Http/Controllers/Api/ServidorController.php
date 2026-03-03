@@ -22,7 +22,7 @@ class ServidorController extends Controller
         $validated = $request->validate([
             'nombre_pc' => 'required|string|max:255',
             'sala_id' => 'required|integer|exists:salas,id',
-            'tipo' => 'required|in:lock,apagar,reiniciar,limpiar_temp',
+            'tipo' => 'required|in:lock,unlock,apagar,reiniciar,limpiar_temp,cancelar_shutdown',
             'parametros' => 'nullable|array',
         ]);
 
